@@ -3,6 +3,7 @@ node_modules
 .next
 out
 test_data.h5ad
+.tmp/
 *.tsbuildinfo
 next-env.d.ts
 .env*

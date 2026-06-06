@@ -24,8 +24,9 @@ lib/
   engine.ts                引擎调度（Scanpy/Seurat）
   ai.ts                    AI 中文解读（预留接口）
 engines/
-  scanpy_pipeline.py       Scanpy 分析流程（核心）
+  scanpy_pipeline.py       Scanpy 发表级分析流程（核心）
   seurat_pipeline.R        Seurat 预留接口（未实现）
+requirements.txt           Python 分析依赖（可复现环境）
 samples/
   sample_pbmc_like.h5ad    h5ad 示例数据
   10x_pbmc_like/           10X 三件套示例（mtx + barcodes + features）
@@ -47,6 +48,22 @@ npm install
 npm run dev
 # 打开 http://localhost:3000
 ```
+
+## 分析能力（发表级）
+
+流程采用单细胞领域标准方法，图表均导出 **PNG(300dpi) + PDF(矢量)**，图内标签为英文（投稿标准），中文解释见报告与 AI 解读：
+
+- **质控**：多维指标（线粒体/核糖体/基因数/UMI）+ Scrublet 双细胞检测 + QC 小提琴图/散点图
+- **批次校正**：多样本自动触发 Harmony（按 sample 列），并出按样本着色 UMAP
+- **降维聚类**：标准化 → HVG → PCA → (Harmony) → Leiden，参数可配（分辨率/PC 数等）
+- **Marker**：Wilcoxon，导出 top50 表 + 热图 + 气泡图(dotplot)
+- **细胞注释**：score_genes 对经典 marker 集打分，出注释 UMAP + 细胞组成图（多样本堆叠）
+- **差异分析**：cluster vs rest，出差异表 + 火山图
+- **富集分析**：gseapy/Enrichr 做真实 GO + KEGG（需联网，离线时如实提示并导出基因列表）
+- 输出 **processed.h5ad**，可供用户在本地 Seurat/Scanpy 继续分析
+- `summary.params` 记录全部参数，便于撰写 Methods 与复现
+
+> 富集分析需联网访问 Enrichr；离线环境下其余分析正常，富集步骤会提示并保留输入基因列表。
 
 ## 使用流程
 
