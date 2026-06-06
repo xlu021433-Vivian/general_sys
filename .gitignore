@@ -1,0 +1,12 @@
+node_modules
+.venv
+.next
+out
+test_data.h5ad
+*.tsbuildinfo
+next-env.d.ts
+.env*
+data/
+*.log
+__pycache__/
+.DS_Store

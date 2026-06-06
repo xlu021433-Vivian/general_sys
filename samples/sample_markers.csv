@@ -1,0 +1,10 @@
+﻿cluster,gene,avg_log2FC,p_val_adj
+0,CD3D,2.1,1e-30
+0,CD3E,1.9,1e-25
+0,CD2,1.5,1e-12
+1,CD79A,2.4,1e-28
+1,MS4A1,2.0,1e-22
+1,CD79B,1.7,1e-15
+2,LYZ,3.0,1e-40
+2,CD14,2.2,1e-30
+2,FCGR3A,1.8,1e-18
