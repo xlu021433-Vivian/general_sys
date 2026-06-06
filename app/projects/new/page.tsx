@@ -113,7 +113,8 @@ export default function NewProjectPage() {
         <div style={{ fontSize: 28 }}>📁</div>
         <div>点击或拖拽文件到此处上传</div>
         <div className="hint">
-          支持：单个 .h5ad ｜ 10X 三件套(matrix.mtx + barcodes.tsv + features.tsv) ｜ marker .csv
+          支持：.h5ad ｜ 10X 三件套(matrix.mtx + barcodes.tsv + features.tsv，可含 .gz) ｜
+          GEO 下载的 .zip 压缩包 ｜ marker .csv
         </div>
         <input
           ref={inputRef}
@@ -123,6 +124,21 @@ export default function NewProjectPage() {
           onChange={(e) => onFiles(e.target.files)}
         />
       </div>
+
+      <details style={{ marginTop: 10 }}>
+        <summary style={{ cursor: "pointer", color: "#4f46e5", fontSize: 14 }}>
+          📥 如何从 NCBI GEO 下载单细胞数据？
+        </summary>
+        <div className="hint" style={{ marginTop: 8, lineHeight: 1.7 }}>
+          1. 打开 GEO 数据集页面（如 <code>ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSExxxxxx</code>），
+          在底部 <b>Supplementary file</b> 中找到表达矩阵。<br />
+          2. 单细胞数据通常是三个文件：<code>barcodes.tsv.gz</code>、
+          <code>features.tsv.gz</code>（或 <code>genes.tsv.gz</code>）、<code>matrix.mtx.gz</code>。<br />
+          3. 把这三个文件一起选中上传，<b>或打包成一个 .zip 直接上传</b> —— 平台会自动解压。<br />
+          4. GEO 数据常见的<b>表头不规范、列数不一</b>等问题，平台已自动处理，无需手动删表头。<br />
+          5. 若只给了原始测序数据(SRA / fastq)，需先用 Cell Ranger 比对成矩阵，暂不支持直接上传。
+        </div>
+      </details>
 
       {files.length > 0 && (
         <ul className="filelist">

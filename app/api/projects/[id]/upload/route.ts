@@ -10,9 +10,11 @@ export const dynamic = "force-dynamic";
 function detectDataType(names: string[]): DataType | undefined {
   const lower = names.map((n) => n.toLowerCase());
   if (lower.some((n) => n.endsWith(".h5ad"))) return "h5ad";
-  const hasMtx = lower.some((n) => n.includes("matrix.mtx"));
-  const hasBarcodes = lower.some((n) => n.includes("barcodes.tsv"));
+  const hasMtx = lower.some((n) => n.includes("matrix.mtx") || n.endsWith(".mtx"));
+  const hasBarcodes = lower.some((n) => n.includes("barcodes") || n.includes("barcode"));
   if (hasMtx && hasBarcodes) return "10x_mtx";
+  // GEO 数据常打包成 zip：交给 Python 解压并宽容加载
+  if (lower.some((n) => n.endsWith(".zip"))) return "10x_mtx";
   if (lower.some((n) => n.endsWith(".csv"))) return "marker_csv";
   return undefined;
 }

@@ -15,6 +15,9 @@ config 字段见 lib/engine.ts（projectId/species/dataType/steps/uploadsDir/res
 import os
 import sys
 import json
+import gzip
+import glob
+import zipfile
 import traceback
 
 os.environ.setdefault("MPLBACKEND", "Agg")
@@ -106,6 +109,110 @@ def params_of(cfg):
     }
 
 
+# ============ GEO/NCBI 数据宽容加载 ============
+# GEO 公共数据常见问题：文件带表头、features 列数不一、文件名/版本不统一、打包成 zip。
+# scanpy.read_10x_mtx 对这些很挑剔，这里自写加载器逐一兜底，让"下载即能分析"。
+
+def _extract_zips(updir):
+    """解压目录下所有 .zip（GEO/用户常把三件套打包上传）。"""
+    for zp in glob.glob(os.path.join(updir, "*.zip")):
+        try:
+            with zipfile.ZipFile(zp) as z:
+                z.extractall(updir)
+            log(f"已解压 {os.path.basename(zp)}")
+        except Exception as e:
+            log(f"解压失败 {zp}: {e}")
+
+
+def _find(updir, *needles):
+    """递归查找文件名包含任一关键字的文件（兼容嵌套文件夹）。"""
+    for root, _dirs, fnames in os.walk(updir):
+        for fn in fnames:
+            low = fn.lower()
+            if any(n in low for n in needles):
+                return os.path.join(root, fn)
+    return None
+
+
+def _open_any(path):
+    return gzip.open(path, "rt", encoding="utf-8", errors="replace") if path.endswith(".gz") \
+        else open(path, "rt", encoding="utf-8", errors="replace")
+
+
+def _looks_like_barcode(tok):
+    t = tok.strip().strip('"')
+    # 典型 barcode: ACGT 串(可带 -1 后缀)；表头通常是 x/barcode/cell 等
+    core = t.split("-")[0]
+    return len(core) >= 8 and set(core.upper()) <= set("ACGTN")
+
+
+def _read_barcodes(path):
+    with _open_any(path) as fh:
+        lines = [ln.rstrip("\n").split("\t")[0].strip().strip('"') for ln in fh if ln.strip()]
+    if lines and not _looks_like_barcode(lines[0]):
+        log(f"barcodes 检测到表头 '{lines[0]}'，已剥离")
+        lines = lines[1:]
+    return lines
+
+
+def _read_features(path):
+    """返回基因 symbol 列表。自动剥离表头、自动选 symbol 列。"""
+    rows = []
+    with _open_any(path) as fh:
+        for ln in fh:
+            if not ln.strip():
+                continue
+            rows.append([c.strip().strip('"') for c in ln.rstrip("\n").split("\t")])
+    if not rows:
+        raise ValueError("features/genes 文件为空")
+    # 表头检测：首行含 'gene'/'ensembl'/'symbol'/'feature' 等字样
+    header_kw = ("gene", "ensembl", "symbol", "feature", "name", "id")
+    first_join = " ".join(rows[0]).lower()
+    if any(k in first_join for k in header_kw) and not rows[0][0].startswith("ENSG") \
+            and not rows[0][0].startswith("ENSMUS"):
+        log(f"features 检测到表头 '{rows[0]}'，已剥离")
+        rows = rows[1:]
+    ncol = max(len(r) for r in rows)
+    # 列含义：Ensembl ID | Symbol | type。symbol 取第 2 列；若仅 1 列则用之。
+    sym_idx = 1 if ncol >= 2 else 0
+    return [r[sym_idx] if len(r) > sym_idx else r[0] for r in rows]
+
+
+def load_10x_flexible(updir):
+    """宽容读取 10x/GEO 矩阵，返回 AnnData(cells × genes)。"""
+    from scipy.io import mmread
+    from scipy.sparse import csr_matrix
+    import anndata as ad
+
+    _extract_zips(updir)
+    mtx = _find(updir, "matrix.mtx", ".mtx")
+    bc = _find(updir, "barcodes.tsv", "barcode")
+    ft = _find(updir, "features.tsv", "genes.tsv", "feature")
+    if not (mtx and bc and ft):
+        raise ValueError(f"未找到完整三件套 (matrix={bool(mtx)}, barcodes={bool(bc)}, features={bool(ft)})")
+    log(f"读取矩阵: {os.path.basename(mtx)} / {os.path.basename(bc)} / {os.path.basename(ft)}")
+
+    M = mmread(mtx).tocsr()            # 10x 约定：行=基因, 列=细胞
+    barcodes = _read_barcodes(bc)
+    genes = _read_features(ft)
+
+    # 对齐方向（matrix 行=基因数 vs 基因列表长度）
+    if M.shape[0] == len(genes) and M.shape[1] == len(barcodes):
+        X = M.T.tocsr()               # 转成 细胞 × 基因
+    elif M.shape[0] == len(barcodes) and M.shape[1] == len(genes):
+        X = M.tocsr()
+    else:
+        raise ValueError(f"矩阵维度 {M.shape} 与 barcodes({len(barcodes)})/genes({len(genes)}) 不匹配")
+
+    adata = ad.AnnData(X=csr_matrix(X))
+    adata.obs_names = barcodes
+    adata.var_names = genes
+    adata.var_names_make_unique()
+    adata.obs_names_make_unique()
+    log(f"加载完成: {adata.n_obs} 细胞 × {adata.n_vars} 基因")
+    return adata
+
+
 def load_data(cfg):
     up = cfg["uploadsDir"]
     dtype = cfg.get("dataType")
@@ -118,7 +225,7 @@ def load_data(cfg):
             raise ValueError("未找到 .h5ad 文件")
         adata = sc.read_h5ad(os.path.join(up, h5))
     elif dtype == "10x_mtx":
-        adata = sc.read_10x_mtx(up, var_names="gene_symbols", cache=False)
+        adata = load_10x_flexible(up)
     elif dtype == "marker_csv":
         csv = next((f for f in files if f.lower().endswith(".csv")), None)
         if not csv:
